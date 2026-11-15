@@ -1,0 +1,4 @@
+#Thu Oct 29 20:16:05 GMT-04:00 2026
+base.0=C\:\\Users\\rodri\\Downloads\\Vueltico_Kotlin_Android_actualizado\\CalculadoraKotlin\\app\\build\\intermediates\\dex\\debugAndroidTest\\mergeProjectDexDebugAndroidTest\\0\\classes.dex
+path.0=0/classes.dex
+renamed.0=classes.dex

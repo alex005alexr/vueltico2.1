@@ -1,0 +1,4 @@
+com.calculadora.app.test.app-androidTest-0 C:\Users\rodri\Downloads\Vueltico_Kotlin_Android_actualizado\CalculadoraKotlin\app\build\generated\res\resValues\androidTest\debug
+com.calculadora.app.test.app-mergeDebugAndroidTestResources-1 C:\Users\rodri\Downloads\Vueltico_Kotlin_Android_actualizado\CalculadoraKotlin\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.calculadora.app.test.app-mergeDebugAndroidTestResources-2 C:\Users\rodri\Downloads\Vueltico_Kotlin_Android_actualizado\CalculadoraKotlin\app\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.calculadora.app.test.app-debugAndroidTest-3 C:\Users\rodri\Downloads\Vueltico_Kotlin_Android_actualizado\CalculadoraKotlin\app\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources
