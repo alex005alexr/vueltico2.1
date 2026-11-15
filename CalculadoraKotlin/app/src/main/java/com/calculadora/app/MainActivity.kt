@@ -669,7 +669,8 @@ private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dis
         val e = euroJson.await()
         val usd1 = p1?.let { numberAt(it, "promedio") } ?: 0.0
         val usd2 = p2?.let { nestedNumber(it, "monitors", "bcv", "price") } ?: 0.0
-        val eur = e?.let { numberAt(it, "promedio") } ?: 0.0
+        val euroBcvHoy = bcvHoy?.let { numberAt(it, "euro") } ?: 0.0
+        val eur = if (euroBcvHoy > 0.0) euroBcvHoy else e?.let { numberAt(it, "promedio") } ?: 0.0
         val p2p = bcvHoy?.optJSONArray("p2p")?.optJSONObject(0)
         val bid = p2p?.let { numberAt(it, "bid") } ?: 0.0
         val ask = p2p?.let { numberAt(it, "ask") } ?: 0.0
@@ -697,7 +698,12 @@ private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dis
             else -> "Sin conexión: usando última tasa guardada"
         }
         val warning = discrepancy || finalUsd <= 0.0 || eur <= 0.0 || usdt <= 0.0 || (usd1 <= 0.0 && usd2 <= 0.0) || nextRateUnavailable
-        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "", usdDate = formatRateDate(officialUpdated), eurDate = bcvHoy?.optString("euro_updated", "")?.let { formatRateDate(it) }.orEmpty(), usdtUpdatedAt = usdtUpdatedAt)
+        val selectedUsdDate = when {
+            useNextBcvRate && hasFuturePublication -> officialUpdated
+            hasFuturePublication -> bcvHoy?.optString("oficial_prev_updated", "")?.takeIf { it.isNotBlank() }.orEmpty()
+            else -> officialUpdated
+        }
+        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "", usdDate = formatRateDate(selectedUsdDate), eurDate = bcvHoy?.optString("euro_updated", "")?.let { formatRateDate(it) }.orEmpty(), usdtUpdatedAt = usdtUpdatedAt)
     }
 }
 
