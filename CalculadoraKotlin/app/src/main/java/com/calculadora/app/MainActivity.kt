@@ -283,10 +283,10 @@ private fun CalculadoraApp() {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (tab) {
                 "Calculadora" -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        RateCard("₮", "USDT P2P", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, relativeAge(rates.usdtUpdatedAt, clockNow), Modifier.fillMaxWidth())
-                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, rates.usdDate, Modifier.fillMaxWidth())
-                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, rates.eurDate, Modifier.fillMaxWidth())
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, rates.usdDate, Modifier.weight(1f))
+                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, rates.eurDate, Modifier.weight(1f))
+                        RateCard("₮", "USDT P2P", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, relativeAge(rates.usdtUpdatedAt, clockNow), Modifier.weight(1f))
                     }
                     if (rates.warning || errorMessage.isNotBlank()) {
                         Text("⚠ No se pudo verificar una o más tasas. Se muestra la última tasa disponible cuando existe.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -299,7 +299,7 @@ private fun CalculadoraApp() {
                             Text("Conversión", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                             Text("Moneda seleccionada: $currency")
                             OutlinedTextField(value = amount, onValueChange = { amount = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } }, label = { Text(if (toVes) "Monto en $currency" else "Monto en bolívares") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
-                            OutlinedButton(onClick = { toVes = !toVes }, modifier = Modifier.fillMaxWidth()) { Text(if (toVes) "⇅  Cambiar a Bolívares a $currency" else "⇅  Cambiar a $currency a Bolívares") }
+                            OutlinedButton(onClick = { toVes = !toVes }, modifier = Modifier.fillMaxWidth()) { Text(if (toVes) "⇅  Cambiar a Bolívares ($currency)" else "⇅  Cambiar a $currency (Bolívares)") }
                             Text("Resultado estimado", style = MaterialTheme.typography.bodyMedium)
                             Text(if (toVes) "Bs. ${formatter.format(result)}" else "${formatter.format(result)} $currency", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             Text(if (rate > 0) "Tasa aplicada: 1 $currency = ${formatter.format(rate)} Bs." else "No hay tasa disponible para $currency", style = MaterialTheme.typography.bodySmall)
