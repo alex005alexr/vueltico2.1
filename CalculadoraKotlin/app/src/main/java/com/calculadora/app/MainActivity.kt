@@ -283,10 +283,10 @@ private fun CalculadoraApp() {
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             when (tab) {
                 "Calculadora" -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, rates.usdDate, Modifier.weight(1f))
-                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, rates.eurDate, Modifier.weight(1f))
-                        RateCard("₮", "USDT P2P", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, relativeAge(rates.usdtUpdatedAt, clockNow), Modifier.weight(1f))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        RateCard("₮", "USDT P2P", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, relativeAge(rates.usdtUpdatedAt, clockNow), Modifier.fillMaxWidth())
+                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, rates.usdDate, Modifier.fillMaxWidth())
+                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, rates.eurDate, Modifier.fillMaxWidth())
                     }
                     if (rates.warning || errorMessage.isNotBlank()) {
                         Text("⚠ No se pudo verificar una o más tasas. Se muestra la última tasa disponible cuando existe.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
