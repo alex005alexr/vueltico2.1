@@ -688,14 +688,24 @@ private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dis
             useNext = useNextBcvRate
         )
 
-        val backupRecords = mutableListOf<JSONObject>()
+        val backupByDate = linkedMapOf<String, JSONObject>()
         if (dolarVzlaHistory != null) {
             for (i in 0 until dolarVzlaHistory.length()) {
-                dolarVzlaHistory.optJSONObject(i)?.let { backupRecords.add(it) }
+                dolarVzlaHistory.optJSONObject(i)?.let { item ->
+                    val date = item.optString("date", "")
+                    if (date.isNotBlank()) backupByDate[date] = item
+                }
             }
         }
-        dolarVzlaCurrent?.optJSONObject("current")?.let { backupRecords.add(it) }
-        dolarVzlaCurrent?.optJSONObject("previous")?.let { backupRecords.add(it) }
+        dolarVzlaCurrent?.optJSONObject("previous")?.let { item ->
+            val date = item.optString("date", "")
+            if (date.isNotBlank()) backupByDate[date] = item
+        }
+        dolarVzlaCurrent?.optJSONObject("current")?.let { item ->
+            val date = item.optString("date", "")
+            if (date.isNotBlank()) backupByDate[date] = item
+        }
+        val backupRecords = backupByDate.values.toList()
 
         val usdBackup = selectDolarVzlaRate(backupRecords, "usd", today, useNextBcvRate)
         val eurBackup = selectDolarVzlaRate(backupRecords, "eur", today, useNextBcvRate)
