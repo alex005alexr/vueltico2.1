@@ -291,9 +291,6 @@ private fun CalculadoraApp() {
                     if (rates.warning || errorMessage.isNotBlank()) {
                         Text("⚠ No se pudo verificar una o más tasas. Se muestra la última tasa disponible cuando existe.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
-                    if (settings.useNextBcvRate && rates.usdNext <= 0.0) {
-                        Text("La tasa para el siguiente día hábil todavía no está publicada. Se está usando la tasa vigente.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
                     Card(shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Conversión", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -798,12 +795,11 @@ private fun selectDolarVzlaRate(
 
 private fun parseRateLocalDate(value: String): java.time.LocalDate? {
     if (value.isBlank()) return null
+    val zone = java.time.ZoneId.of("America/Caracas")
     return try {
-        if (value.length >= 10) java.time.LocalDate.parse(value.substring(0, 10))
-        else java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("America/Caracas")).toLocalDate()
+        java.time.OffsetDateTime.parse(value).atZoneSameInstant(zone).toLocalDate()
     } catch (_: Exception) {
-        try { java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("America/Caracas")).toLocalDate() }
-        catch (_: Exception) { null }
+        try { java.time.LocalDate.parse(value.take(10)) } catch (_: Exception) { null }
     }
 }
 
