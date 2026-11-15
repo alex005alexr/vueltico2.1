@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -78,7 +79,10 @@ private data class Rates(
     val warning: Boolean = false,
     val usdCurrent: Double = 0.0,
     val usdNext: Double = 0.0,
-    val usdNextDate: String = ""
+    val usdNextDate: String = "",
+    val usdDate: String = "",
+    val eurDate: String = "",
+    val usdtUpdatedAt: Long = 0L
 )
 
 private data class PaymentAccount(
@@ -128,6 +132,7 @@ private fun CalculadoraApp() {
     var settings by remember { mutableStateOf(AppSettings()) }
     val accounts = remember { mutableStateListOf<PaymentAccount>() }
     var loading by remember { mutableStateOf(false) }
+    var clockNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var amount by remember { mutableStateOf("1") }
     var currency by remember { mutableStateOf("USD") }
     var toVes by remember { mutableStateOf(true) }
@@ -189,6 +194,7 @@ private fun CalculadoraApp() {
             put("usd", r.usd); put("eur", r.eur); put("usdt", r.usdt); put("usdSource2", r.usdSource2)
             put("updatedAt", r.updatedAt); put("status", r.status); put("warning", r.warning)
             put("usdCurrent", r.usdCurrent); put("usdNext", r.usdNext); put("usdNextDate", r.usdNextDate)
+            put("usdDate", r.usdDate); put("eurDate", r.eurDate); put("usdtUpdatedAt", r.usdtUpdatedAt)
         }.toString()).apply()
     }
 
@@ -206,6 +212,9 @@ private fun CalculadoraApp() {
                     usdCurrent = if (result.usdCurrent > 0.0) result.usdCurrent else latestRates.usdCurrent,
                     usdNext = result.usdNext,
                     usdNextDate = result.usdNextDate,
+                    usdDate = result.usdDate.ifBlank { latestRates.usdDate },
+                    eurDate = result.eurDate.ifBlank { latestRates.eurDate },
+                    usdtUpdatedAt = if (result.usdtUpdatedAt > 0L) result.usdtUpdatedAt else latestRates.usdtUpdatedAt,
                     status = result.status, warning = result.warning || (result.usd <= 0.0) || (result.eur <= 0.0) || (result.usdt <= 0.0)
                 )
                 rates = merged
@@ -224,7 +233,7 @@ private fun CalculadoraApp() {
             val cachedRates = prefs.getString(KEY_RATES, null)
             if (cachedRates != null) {
                 val j = JSONObject(cachedRates)
-                rates = Rates(j.optDouble("usd"), j.optDouble("eur"), j.optDouble("usdt"), j.optDouble("usdSource2"), j.optLong("updatedAt"), j.optString("status", "Sin verificar"), j.optBoolean("warning"), j.optDouble("usdCurrent"), j.optDouble("usdNext"), j.optString("usdNextDate", ""))
+                rates = Rates(j.optDouble("usd"), j.optDouble("eur"), j.optDouble("usdt"), j.optDouble("usdSource2"), j.optLong("updatedAt"), j.optString("status", "Sin verificar"), j.optBoolean("warning"), j.optDouble("usdCurrent"), j.optDouble("usdNext"), j.optString("usdNextDate", ""), j.optString("usdDate", ""), j.optString("eurDate", ""), j.optLong("usdtUpdatedAt"))
             }
             val savedSettings = prefs.getString(KEY_SETTINGS, null)
             if (savedSettings != null) {
@@ -243,6 +252,13 @@ private fun CalculadoraApp() {
             }
         } catch (_: Exception) { }
         refreshRates()
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            clockNow = System.currentTimeMillis()
+        }
     }
 
     val rate = when (currency) { "EUR" -> rates.eur; "USDT" -> rates.usdt; else -> rates.usd }
@@ -268,9 +284,9 @@ private fun CalculadoraApp() {
             when (tab) {
                 "Calculadora" -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, Modifier.weight(1f))
-                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, Modifier.weight(1f))
-                        RateCard("₮", "USDT paralelo", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, Modifier.weight(1f))
+                        RateCard("🇻🇪", "USD BCV", rates.usd, currency == "USD", { currency = "USD" }, formatter, rates.usdDate, Modifier.weight(1f))
+                        RateCard("🇪🇺", "EUR BCV", rates.eur, currency == "EUR", { currency = "EUR" }, formatter, rates.eurDate, Modifier.weight(1f))
+                        RateCard("₮", "USDT P2P", rates.usdt, currency == "USDT", { currency = "USDT" }, formatter, relativeAge(rates.usdtUpdatedAt, clockNow), Modifier.weight(1f))
                     }
                     if (rates.warning || errorMessage.isNotBlank()) {
                         Text("⚠ No se pudo verificar una o más tasas. Se muestra la última tasa disponible cuando existe.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -475,13 +491,13 @@ private fun TopAppBarCompat(title: String, onRefresh: () -> Unit, loading: Boole
 }
 
 @Composable
-private fun RateCard(icon: String, label: String, value: Double, selected: Boolean, onClick: () -> Unit, formatter: java.text.DecimalFormat, modifier: Modifier = Modifier) {
+private fun RateCard(icon: String, label: String, value: Double, selected: Boolean, onClick: () -> Unit, formatter: java.text.DecimalFormat, updatedLabel: String, modifier: Modifier = Modifier) {
     Card(modifier = modifier, onClick = onClick, colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.padding(9.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.padding(9.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(icon, style = MaterialTheme.typography.titleMedium)
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(if (value > 0) formatter.format(value) else "N/D", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text("Bs.", style = MaterialTheme.typography.labelSmall)
+            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+            Text(if (value > 0) "Bs. ${formatter.format(value)}" else "N/D", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(updatedLabel.ifBlank { "—" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
 }
@@ -647,16 +663,18 @@ private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dis
         val primaryUsd = async { requestJson("https://ve.dolarapi.com/v1/dolares/oficial") }
         val secondaryUsd = async { requestJson("https://pydolarve.org/api/v1/dollar?page=bcv") }
         val euroJson = async { requestJson("https://ve.dolarapi.com/v1/euros/oficial") }
-        val parallelUsdtJson = async { requestJson("https://ve.dolarapi.com/v1/dolares/paralelo") }
         val bcvHoy = bcvHoyJson.await()
         val p1 = primaryUsd.await()
         val p2 = secondaryUsd.await()
         val e = euroJson.await()
-        val parallel = parallelUsdtJson.await()
         val usd1 = p1?.let { numberAt(it, "promedio") } ?: 0.0
         val usd2 = p2?.let { nestedNumber(it, "monitors", "bcv", "price") } ?: 0.0
         val eur = e?.let { numberAt(it, "promedio") } ?: 0.0
-        val usdt = parallel?.let { numberAt(it, "promedio") } ?: 0.0
+        val p2p = bcvHoy?.optJSONArray("p2p")?.optJSONObject(0)
+        val bid = p2p?.let { numberAt(it, "bid") } ?: 0.0
+        val ask = p2p?.let { numberAt(it, "ask") } ?: 0.0
+        val usdt = if (bid > 0.0 && ask > 0.0) (bid + ask) / 2.0 else 0.0
+        val usdtUpdatedAt = p2p?.let { numberAt(it, "updated_at").toLong() }?.let { if (it > 0L) it * 1000L else 0L } ?: 0L
         val officialPublished = bcvHoy?.let { numberAt(it, "oficial") } ?: 0.0
         val officialPrevious = bcvHoy?.let { numberAt(it, "oficial_prev") } ?: 0.0
         val officialUpdated = bcvHoy?.optString("oficial_updated", "").orEmpty()
@@ -679,7 +697,7 @@ private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dis
             else -> "Sin conexión: usando última tasa guardada"
         }
         val warning = discrepancy || finalUsd <= 0.0 || eur <= 0.0 || usdt <= 0.0 || (usd1 <= 0.0 && usd2 <= 0.0) || nextRateUnavailable
-        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "")
+        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "", usdDate = formatRateDate(officialUpdated), eurDate = bcvHoy?.optString("euro_updated", "")?.let { formatRateDate(it) }.orEmpty(), usdtUpdatedAt = usdtUpdatedAt)
     }
 }
 
@@ -694,6 +712,25 @@ private fun requestJson(url: String): JSONObject? {
         if (connection.responseCode !in 200..299) return null
         JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
     } catch (_: Exception) { null } finally { connection?.disconnect() }
+}
+
+private fun formatRateDate(value: String): String {
+    if (value.isBlank()) return ""
+    return try {
+        val date = try { OffsetDateTime.parse(value).toLocalDate() } catch (_: Exception) { java.time.LocalDate.parse(value.take(10)) }
+        java.time.format.DateTimeFormatter.ofPattern("dd/MM/yy", Locale("es", "VE")).format(date)
+    } catch (_: Exception) { "" }
+}
+
+private fun relativeAge(timestampMillis: Long, nowMillis: Long): String {
+    if (timestampMillis <= 0L) return "Sin hora"
+    val minutes = ((nowMillis - timestampMillis).coerceAtLeast(0L) / 60_000L)
+    return when {
+        minutes < 1 -> "Hace menos de 1 min"
+        minutes < 60 -> "Hace $minutes min"
+        minutes < 1440 -> "Hace ${minutes / 60} h"
+        else -> "Hace ${minutes / 1440} días"
+    }
 }
 
 private fun isFutureOfficialDate(value: String): Boolean {
