@@ -51,6 +51,7 @@ import java.math.RoundingMode
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
+import java.time.OffsetDateTime
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
@@ -74,7 +75,10 @@ private data class Rates(
     val usdSource2: Double = 0.0,
     val updatedAt: Long = 0L,
     val status: String = "Sin verificar",
-    val warning: Boolean = false
+    val warning: Boolean = false,
+    val usdCurrent: Double = 0.0,
+    val usdNext: Double = 0.0,
+    val usdNextDate: String = ""
 )
 
 private data class PaymentAccount(
@@ -108,7 +112,8 @@ private data class AppSettings(
     val footer: String = "¡Gracias por su preferencia!",
     val manualUsdt: String = "",
     val companyImageBase64: String = "",
-    val enablePaymentDataMessage: Boolean = true
+    val enablePaymentDataMessage: Boolean = true,
+    val useNextBcvRate: Boolean = false
 )
 
 @Composable
@@ -138,6 +143,7 @@ private fun CalculadoraApp() {
     var usdtDraft by remember { mutableStateOf(settings.manualUsdt) }
     var companyImageDraft by remember { mutableStateOf(settings.companyImageBase64) }
     var enablePaymentDataMessageDraft by remember { mutableStateOf(settings.enablePaymentDataMessage) }
+    var useNextBcvRateDraft by remember { mutableStateOf(settings.useNextBcvRate) }
     val pickCompanyImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             try {
@@ -174,6 +180,7 @@ private fun CalculadoraApp() {
             put("customReceiptType", settings.customReceiptType); put("footer", settings.footer)
             put("manualUsdt", settings.manualUsdt); put("companyImageBase64", settings.companyImageBase64)
             put("enablePaymentDataMessage", settings.enablePaymentDataMessage)
+            put("useNextBcvRate", settings.useNextBcvRate)
         }.toString()).apply()
     }
 
@@ -181,6 +188,7 @@ private fun CalculadoraApp() {
         prefs.edit().putString(KEY_RATES, JSONObject().apply {
             put("usd", r.usd); put("eur", r.eur); put("usdt", r.usdt); put("usdSource2", r.usdSource2)
             put("updatedAt", r.updatedAt); put("status", r.status); put("warning", r.warning)
+            put("usdCurrent", r.usdCurrent); put("usdNext", r.usdNext); put("usdNextDate", r.usdNextDate)
         }.toString()).apply()
     }
 
@@ -189,17 +197,20 @@ private fun CalculadoraApp() {
             loading = true
             errorMessage = ""
             try {
-                val result = fetchRates()
+                val result = fetchRates(settings.useNextBcvRate)
                 val merged = result.copy(
                     usd = if (result.usd > 0.0) result.usd else latestRates.usd,
                     eur = if (result.eur > 0.0) result.eur else latestRates.eur,
                     usdt = if (result.usdt > 0.0) result.usdt else latestRates.usdt,
                     updatedAt = if (result.usd > 0.0 || result.eur > 0.0 || result.usdt > 0.0) result.updatedAt else latestRates.updatedAt,
+                    usdCurrent = if (result.usdCurrent > 0.0) result.usdCurrent else latestRates.usdCurrent,
+                    usdNext = result.usdNext,
+                    usdNextDate = result.usdNextDate,
                     status = result.status, warning = result.warning || (result.usd <= 0.0) || (result.eur <= 0.0) || (result.usdt <= 0.0)
                 )
                 rates = merged
                 persistRates(merged)
-                if (result.usd <= 0.0 && result.eur <= 0.0) errorMessage = "No se pudieron obtener tasas nuevas. Se conservan las últimas tasas guardadas."
+                if (result.usd <= 0.0 && result.eur <= 0.0 && result.usdt <= 0.0) errorMessage = "No se pudieron obtener tasas nuevas. Se conservan las últimas tasas guardadas."
             } catch (e: Exception) {
                 errorMessage = "No se pudo actualizar. Comprueba tu conexión; se conservan las tasas guardadas."
             } finally {
@@ -213,14 +224,14 @@ private fun CalculadoraApp() {
             val cachedRates = prefs.getString(KEY_RATES, null)
             if (cachedRates != null) {
                 val j = JSONObject(cachedRates)
-                rates = Rates(j.optDouble("usd"), j.optDouble("eur"), j.optDouble("usdt"), j.optDouble("usdSource2"), j.optLong("updatedAt"), j.optString("status", "Sin verificar"), j.optBoolean("warning"))
+                rates = Rates(j.optDouble("usd"), j.optDouble("eur"), j.optDouble("usdt"), j.optDouble("usdSource2"), j.optLong("updatedAt"), j.optString("status", "Sin verificar"), j.optBoolean("warning"), j.optDouble("usdCurrent"), j.optDouble("usdNext"), j.optString("usdNextDate", ""))
             }
             val savedSettings = prefs.getString(KEY_SETTINGS, null)
             if (savedSettings != null) {
                 val j = JSONObject(savedSettings)
-                settings = AppSettings(j.optString("companyName", "Mi Empresa"), j.optString("receiptType", "Solicitud de Pago"), j.optString("customReceiptType", ""), j.optString("footer", "¡Gracias por su preferencia!"), j.optString("manualUsdt", ""), j.optString("companyImageBase64", ""), j.optBoolean("enablePaymentDataMessage", true))
+                settings = AppSettings(j.optString("companyName", "Mi Empresa"), j.optString("receiptType", "Solicitud de Pago"), j.optString("customReceiptType", ""), j.optString("footer", "¡Gracias por su preferencia!"), j.optString("manualUsdt", ""), j.optString("companyImageBase64", ""), j.optBoolean("enablePaymentDataMessage", true), j.optBoolean("useNextBcvRate", false))
                 companyDraft = settings.companyName; receiptDraft = settings.receiptType
-                customTitleDraft = settings.customReceiptType; footerDraft = settings.footer; usdtDraft = settings.manualUsdt; companyImageDraft = settings.companyImageBase64; enablePaymentDataMessageDraft = settings.enablePaymentDataMessage
+                customTitleDraft = settings.customReceiptType; footerDraft = settings.footer; usdtDraft = settings.manualUsdt; companyImageDraft = settings.companyImageBase64; enablePaymentDataMessageDraft = settings.enablePaymentDataMessage; useNextBcvRateDraft = settings.useNextBcvRate
             }
             val savedAccounts = prefs.getString(KEY_ACCOUNTS, null)
             if (savedAccounts != null) {
@@ -263,6 +274,9 @@ private fun CalculadoraApp() {
                     }
                     if (rates.warning || errorMessage.isNotBlank()) {
                         Text("⚠ No se pudo verificar una o más tasas. Se muestra la última tasa disponible cuando existe.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (settings.useNextBcvRate && rates.usdNext <= 0.0) {
+                        Text("La tasa para el siguiente día hábil todavía no está publicada. Se está usando la tasa vigente.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     Card(shape = RoundedCornerShape(16.dp)) {
                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -331,9 +345,17 @@ private fun CalculadoraApp() {
                                 }
                                 Switch(checked = enablePaymentDataMessageDraft, onCheckedChange = { enablePaymentDataMessageDraft = it })
                             }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Usar tasa publicada para el siguiente día hábil", fontWeight = FontWeight.SemiBold)
+                                    Text("Desactivada: tasa vigente del BCV. Activada: tasa ya publicada para el próximo día hábil, cuando esté disponible.", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = useNextBcvRateDraft, onCheckedChange = { useNextBcvRateDraft = it })
+                            }
                             Button(onClick = {
-                                settings = AppSettings(companyDraft, receiptDraft, customTitleDraft, footerDraft, "", companyImageDraft, enablePaymentDataMessageDraft)
+                                settings = AppSettings(companyDraft, receiptDraft, customTitleDraft, footerDraft, usdtDraft, companyImageDraft, enablePaymentDataMessageDraft, useNextBcvRateDraft)
                                 persistSettings()
+                                refreshRates()
                                 Toast.makeText(context, "Configuración guardada", Toast.LENGTH_SHORT).show()
                             }, modifier = Modifier.fillMaxWidth()) { Text("Guardar configuración") }
                         }
@@ -619,12 +641,14 @@ private fun copyText(context: Context, text: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("Datos de pago", text))
 }
 
-private suspend fun fetchRates(): Rates = withContext(Dispatchers.IO) {
+private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dispatchers.IO) {
     coroutineScope {
+        val bcvHoyJson = async { requestJson("https://bcvhoy.com/api/tasas") }
         val primaryUsd = async { requestJson("https://ve.dolarapi.com/v1/dolares/oficial") }
         val secondaryUsd = async { requestJson("https://pydolarve.org/api/v1/dollar?page=bcv") }
         val euroJson = async { requestJson("https://ve.dolarapi.com/v1/euros/oficial") }
         val parallelUsdtJson = async { requestJson("https://ve.dolarapi.com/v1/dolares/paralelo") }
+        val bcvHoy = bcvHoyJson.await()
         val p1 = primaryUsd.await()
         val p2 = secondaryUsd.await()
         val e = euroJson.await()
@@ -633,16 +657,29 @@ private suspend fun fetchRates(): Rates = withContext(Dispatchers.IO) {
         val usd2 = p2?.let { nestedNumber(it, "monitors", "bcv", "price") } ?: 0.0
         val eur = e?.let { numberAt(it, "promedio") } ?: 0.0
         val usdt = parallel?.let { numberAt(it, "promedio") } ?: 0.0
-        val finalUsd = if (usd1 > 0) usd1 else usd2
+        val officialPublished = bcvHoy?.let { numberAt(it, "oficial") } ?: 0.0
+        val officialPrevious = bcvHoy?.let { numberAt(it, "oficial_prev") } ?: 0.0
+        val officialUpdated = bcvHoy?.optString("oficial_updated", "").orEmpty()
+        val hasFuturePublication = isFutureOfficialDate(officialUpdated) && officialPublished > 0.0
+        val officialCurrent = when {
+            hasFuturePublication -> if (officialPrevious > 0.0) officialPrevious else if (usd1 > 0.0) usd1 else usd2
+            officialPublished > 0.0 -> officialPublished
+            usd1 > 0.0 -> usd1
+            else -> usd2
+        }
+        val officialNext = if (hasFuturePublication) officialPublished else 0.0
+        val finalUsd = if (useNextBcvRate && officialNext > 0.0) officialNext else officialCurrent
+        val nextRateUnavailable = useNextBcvRate && officialNext <= 0.0
         val discrepancy = usd1 > 0 && usd2 > 0 && abs(usd1 - usd2) > 0.05
         val status = when {
+            nextRateUnavailable -> "Tasa del siguiente día hábil aún no publicada; se usa la vigente"
             usd1 > 0 && usd2 > 0 && !discrepancy -> "Verificada entre fuentes"
             usd1 > 0 && usd2 > 0 && discrepancy -> "Diferencia detectada"
             finalUsd > 0 -> "Sin verificar: una fuente no respondió"
             else -> "Sin conexión: usando última tasa guardada"
         }
-        val warning = discrepancy || finalUsd <= 0.0 || eur <= 0.0 || usdt <= 0.0 || (usd1 <= 0.0 && usd2 <= 0.0)
-        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning)
+        val warning = discrepancy || finalUsd <= 0.0 || eur <= 0.0 || usdt <= 0.0 || (usd1 <= 0.0 && usd2 <= 0.0) || nextRateUnavailable
+        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "")
     }
 }
 
@@ -657,6 +694,13 @@ private fun requestJson(url: String): JSONObject? {
         if (connection.responseCode !in 200..299) return null
         JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
     } catch (_: Exception) { null } finally { connection?.disconnect() }
+}
+
+private fun isFutureOfficialDate(value: String): Boolean {
+    return try {
+        val publishedAt = OffsetDateTime.parse(value)
+        publishedAt.toLocalDate().isAfter(OffsetDateTime.now(publishedAt.offset).toLocalDate())
+    } catch (_: Exception) { false }
 }
 
 private fun numberAt(json: JSONObject, key: String): Double {
