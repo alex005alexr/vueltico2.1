@@ -657,54 +657,167 @@ private fun copyText(context: Context, text: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("Datos de pago", text))
 }
 
+private data class SelectedOfficialRate(
+    val value: Double,
+    val dateLabel: String,
+    val nextValue: Double = 0.0,
+    val nextDate: String = ""
+)
+
 private suspend fun fetchRates(useNextBcvRate: Boolean): Rates = withContext(Dispatchers.IO) {
     coroutineScope {
-        val bcvHoyJson = async { requestJson("https://bcvhoy.com/api/tasas") }
-        val primaryUsd = async { requestJson("https://ve.dolarapi.com/v1/dolares/oficial") }
-        val secondaryUsd = async { requestJson("https://pydolarve.org/api/v1/dollar?page=bcv") }
-        val euroJson = async { requestJson("https://ve.dolarapi.com/v1/euros/oficial") }
-        val bcvHoy = bcvHoyJson.await()
-        val p1 = primaryUsd.await()
-        val p2 = secondaryUsd.await()
-        val e = euroJson.await()
-        val usd1 = p1?.let { numberAt(it, "promedio") } ?: 0.0
-        val usd2 = p2?.let { nestedNumber(it, "monitors", "bcv", "price") } ?: 0.0
-        val euroBcvHoy = bcvHoy?.let { numberAt(it, "euro") } ?: 0.0
-        val eur = if (euroBcvHoy > 0.0) euroBcvHoy else e?.let { numberAt(it, "promedio") } ?: 0.0
+        val bcvHoyTask = async { requestJson("https://bcvhoy.com/api/tasas") }
+        val dolarVzlaCurrentTask = async { requestJson("https://rates.dolarvzla.com/bcv/current.json") }
+        val year = java.time.LocalDate.now(java.time.ZoneId.of("America/Caracas")).year
+        val dolarVzlaHistoryTask = async { requestJsonArray("https://rates.dolarvzla.com/bcv/$year/list.json") }
+
+        val bcvHoy = bcvHoyTask.await()
+        val dolarVzlaCurrent = dolarVzlaCurrentTask.await()
+        val dolarVzlaHistory = dolarVzlaHistoryTask.await()
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("America/Caracas"))
+
+        val usdPrimary = selectBcvHoyRate(
+            currentValue = bcvHoy?.let { numberAt(it, "oficial") } ?: 0.0,
+            previousValue = bcvHoy?.let { numberAt(it, "oficial_prev") } ?: 0.0,
+            currentDate = bcvHoy?.optString("oficial_updated", "").orEmpty(),
+            today = today,
+            useNext = useNextBcvRate
+        )
+        val eurPrimary = selectBcvHoyRate(
+            currentValue = bcvHoy?.let { numberAt(it, "euro") } ?: 0.0,
+            previousValue = bcvHoy?.let { numberAt(it, "euro_prev") } ?: 0.0,
+            currentDate = bcvHoy?.optString("euro_updated", "").orEmpty(),
+            today = today,
+            useNext = useNextBcvRate
+        )
+
+        val backupRecords = mutableListOf<JSONObject>()
+        if (dolarVzlaHistory != null) {
+            for (i in 0 until dolarVzlaHistory.length()) {
+                dolarVzlaHistory.optJSONObject(i)?.let { backupRecords.add(it) }
+            }
+        }
+        dolarVzlaCurrent?.optJSONObject("current")?.let { backupRecords.add(it) }
+        dolarVzlaCurrent?.optJSONObject("previous")?.let { backupRecords.add(it) }
+
+        val usdBackup = selectDolarVzlaRate(backupRecords, "usd", today, useNextBcvRate)
+        val eurBackup = selectDolarVzlaRate(backupRecords, "eur", today, useNextBcvRate)
+
+        val usdSelected = usdPrimary.takeIf { it.value > 0.0 } ?: usdBackup
+        val eurSelected = eurPrimary.takeIf { it.value > 0.0 } ?: eurBackup
+
         val p2p = bcvHoy?.optJSONArray("p2p")?.optJSONObject(0)
         val bid = p2p?.let { numberAt(it, "bid") } ?: 0.0
         val ask = p2p?.let { numberAt(it, "ask") } ?: 0.0
         val usdt = if (bid > 0.0 && ask > 0.0) (bid + ask) / 2.0 else 0.0
         val usdtUpdatedAt = p2p?.let { numberAt(it, "updated_at").toLong() }?.let { if (it > 0L) it * 1000L else 0L } ?: 0L
-        val officialPublished = bcvHoy?.let { numberAt(it, "oficial") } ?: 0.0
-        val officialPrevious = bcvHoy?.let { numberAt(it, "oficial_prev") } ?: 0.0
-        val officialUpdated = bcvHoy?.optString("oficial_updated", "").orEmpty()
-        val hasFuturePublication = isFutureOfficialDate(officialUpdated) && officialPublished > 0.0
-        val officialCurrent = when {
-            hasFuturePublication -> if (officialPrevious > 0.0) officialPrevious else if (usd1 > 0.0) usd1 else usd2
-            officialPublished > 0.0 -> officialPublished
-            usd1 > 0.0 -> usd1
-            else -> usd2
-        }
-        val officialNext = if (hasFuturePublication) officialPublished else 0.0
-        val finalUsd = if (useNextBcvRate && officialNext > 0.0) officialNext else officialCurrent
-        val nextRateUnavailable = useNextBcvRate && officialNext <= 0.0
-        val discrepancy = usd1 > 0 && usd2 > 0 && abs(usd1 - usd2) > 0.05
+
+        val usdPrimaryAvailable = usdPrimary.value > 0.0
+        val eurPrimaryAvailable = eurPrimary.value > 0.0
+        val usdBackupAvailable = usdBackup.value > 0.0
+        val eurBackupAvailable = eurBackup.value > 0.0
+        val usingBackup = (!usdPrimaryAvailable && usdBackupAvailable) || (!eurPrimaryAvailable && eurBackupAvailable)
+        val warning = usdSelected.value <= 0.0 || eurSelected.value <= 0.0 || usdt <= 0.0 ||
+            !usdPrimaryAvailable || !eurPrimaryAvailable || usingBackup
+
         val status = when {
-            nextRateUnavailable -> "Tasa del siguiente día hábil aún no publicada; se usa la vigente"
-            usd1 > 0 && usd2 > 0 && !discrepancy -> "Verificada entre fuentes"
-            usd1 > 0 && usd2 > 0 && discrepancy -> "Diferencia detectada"
-            finalUsd > 0 -> "Sin verificar: una fuente no respondió"
-            else -> "Sin conexión: usando última tasa guardada"
+            usdSelected.value > 0.0 && eurSelected.value > 0.0 && usdPrimaryAvailable && eurPrimaryAvailable -> "Tasas obtenidas de BCVHoy"
+            usdSelected.value > 0.0 && eurSelected.value > 0.0 -> "Respaldo DolarVZLA"
+            else -> "Una o más tasas no están disponibles"
         }
-        val warning = discrepancy || finalUsd <= 0.0 || eur <= 0.0 || usdt <= 0.0 || (usd1 <= 0.0 && usd2 <= 0.0) || nextRateUnavailable
-        val selectedUsdDate = when {
-            useNextBcvRate && hasFuturePublication -> officialUpdated
-            hasFuturePublication -> bcvHoy?.optString("oficial_prev_updated", "")?.takeIf { it.isNotBlank() }.orEmpty()
-            else -> officialUpdated
-        }
-        Rates(usd = finalUsd, eur = eur, usdt = usdt, usdSource2 = usd2, updatedAt = if (finalUsd > 0 || eur > 0 || usdt > 0) System.currentTimeMillis() else 0L, status = status, warning = warning, usdCurrent = officialCurrent, usdNext = officialNext, usdNextDate = if (hasFuturePublication) officialUpdated else "", usdDate = formatRateDate(selectedUsdDate), eurDate = bcvHoy?.optString("euro_updated", "")?.let { formatRateDate(it) }.orEmpty(), usdtUpdatedAt = usdtUpdatedAt)
+
+        Rates(
+            usd = usdSelected.value,
+            eur = eurSelected.value,
+            usdt = usdt,
+            usdSource2 = usdBackup.value,
+            updatedAt = if (usdSelected.value > 0.0 || eurSelected.value > 0.0 || usdt > 0.0) System.currentTimeMillis() else 0L,
+            status = status,
+            warning = warning,
+            usdCurrent = usdSelected.value,
+            usdNext = usdSelected.nextValue,
+            usdNextDate = usdSelected.nextDate,
+            usdDate = usdSelected.dateLabel,
+            eurDate = eurSelected.dateLabel,
+            usdtUpdatedAt = usdtUpdatedAt
+        )
     }
+}
+
+private fun selectBcvHoyRate(
+    currentValue: Double,
+    previousValue: Double,
+    currentDate: String,
+    today: java.time.LocalDate,
+    useNext: Boolean
+): SelectedOfficialRate {
+    val publishedDate = parseRateLocalDate(currentDate)
+    val hasFuture = publishedDate != null && publishedDate.isAfter(today) && currentValue > 0.0
+
+    if (hasFuture) {
+        return if (useNext) {
+            SelectedOfficialRate(currentValue, formatRateDate(currentDate), currentValue, formatRateDate(currentDate))
+        } else if (previousValue > 0.0) {
+            SelectedOfficialRate(previousValue, "Vigente", currentValue, formatRateDate(currentDate))
+        } else {
+            SelectedOfficialRate(0.0, "", currentValue, formatRateDate(currentDate))
+        }
+    }
+
+    return if (currentValue > 0.0) {
+        SelectedOfficialRate(currentValue, formatRateDate(currentDate))
+    } else {
+        SelectedOfficialRate(0.0, "")
+    }
+}
+
+private fun selectDolarVzlaRate(
+    records: List<JSONObject>,
+    currencyKey: String,
+    today: java.time.LocalDate,
+    useNext: Boolean
+): SelectedOfficialRate {
+    val dated = records.mapNotNull { item ->
+        val dateText = item.optString("date", "")
+        val date = parseRateLocalDate(dateText) ?: return@mapNotNull null
+        val value = numberAt(item, currencyKey)
+        if (value <= 0.0) null else Triple(date, value, dateText)
+    }.distinctBy { it.first to it.second }
+
+    val next = dated.filter { it.first.isAfter(today) }.minByOrNull { it.first }
+    val current = dated.filter { !it.first.isAfter(today) }.maxByOrNull { it.first }
+    val selected = if (useNext && next != null) next else current
+
+    return SelectedOfficialRate(
+        value = selected?.second ?: 0.0,
+        dateLabel = selected?.third?.let { formatRateDate(it) }.orEmpty(),
+        nextValue = next?.second ?: 0.0,
+        nextDate = next?.third?.let { formatRateDate(it) }.orEmpty()
+    )
+}
+
+private fun parseRateLocalDate(value: String): java.time.LocalDate? {
+    if (value.isBlank()) return null
+    return try {
+        if (value.length >= 10) java.time.LocalDate.parse(value.substring(0, 10))
+        else java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("America/Caracas")).toLocalDate()
+    } catch (_: Exception) {
+        try { java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.of("America/Caracas")).toLocalDate() }
+        catch (_: Exception) { null }
+    }
+}
+
+private fun requestJsonArray(url: String): JSONArray? {
+    var connection: HttpURLConnection? = null
+    return try {
+        connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"; connectTimeout = 8000; readTimeout = 8000
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "Vueltico/2.1")
+        }
+        if (connection.responseCode !in 200..299) return null
+        JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+    } catch (_: Exception) { null } finally { connection?.disconnect() }
 }
 
 private fun requestJson(url: String): JSONObject? {
