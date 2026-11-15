@@ -851,7 +851,7 @@ private fun relativeAge(timestampMillis: Long, nowMillis: Long): String {
     if (timestampMillis <= 0L) return "Sin hora"
     val minutes = ((nowMillis - timestampMillis).coerceAtLeast(0L) / 60_000L)
     return when {
-        minutes < 1 -> "Hace menos de 1 min"
+        minutes < 1 -> "Hace 1 min"
         minutes < 60 -> "Hace $minutes min"
         minutes < 1440 -> "Hace ${minutes / 60} h"
         else -> "Hace ${minutes / 1440} días"
